@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.AuthMapper">
+  <select id="findByEmployeeNo" resultType="com.crm.entity.User">
+    SELECT id,employee_no,real_name,password_hash,dept_id,status,employment_status,deleted
+    FROM sys_user WHERE employee_no=#{employeeNo} FOR UPDATE
+  </select>
+  <select id="findByTokenHash" resultType="com.crm.entity.User">
+    SELECT u.id,u.employee_no,u.real_name,u.dept_id,u.status,u.employment_status,u.deleted
+    FROM sys_login_session s JOIN sys_user u ON u.id=s.user_id
+    WHERE s.token_hash=#{tokenHash} AND s.revoked_at IS NULL AND s.expires_at > CURRENT_TIMESTAMP
+  </select>
+  <select id="findDeptName" resultType="string">
+    SELECT dept_name FROM sys_dept WHERE id=#{deptId}
+  </select>
+  <select id="findRoles" resultType="com.crm.entity.Role">
+    SELECT r.id,r.role_name,r.role_code,r.data_scope
+    FROM sys_role r JOIN sys_user_role ur ON ur.role_id=r.id
+    WHERE ur.user_id=#{userId} AND r.status=1 AND r.deleted=0 ORDER BY r.id
+  </select>
+  <select id="findGrantedPermissions" resultType="com.crm.entity.Permission">
+    SELECT DISTINCT p.* FROM sys_permission p
+    JOIN sys_role_permission rp ON rp.permission_id=p.id
+    JOIN sys_role r ON r.id=rp.role_id
+    JOIN sys_user_role ur ON ur.role_id=r.id
+    WHERE ur.user_id=#{userId} AND r.status=1 AND r.deleted=0 AND p.status=1
+    ORDER BY p.sort_no,p.id
+  </select>
+  <select id="findEnabledPermissions" resultType="com.crm.entity.Permission">
+    SELECT * FROM sys_permission WHERE status=1 ORDER BY sort_no,id
+  </select>
+  <insert id="insertSession">
+    INSERT INTO sys_login_session(user_id,token_hash,expires_at) VALUES(#{userId},#{tokenHash},#{expiresAt})
+  </insert>
+  <update id="updateLastLogin">
+    UPDATE sys_user SET last_login_at=CURRENT_TIMESTAMP WHERE id=#{userId}
+  </update>
+  <update id="revokeSession">
+    UPDATE sys_login_session SET revoked_at=CURRENT_TIMESTAMP
+    WHERE token_hash=#{tokenHash} AND revoked_at IS NULL
+  </update>
+  <update id="revokeUserSessions">
+    UPDATE sys_login_session SET revoked_at=CURRENT_TIMESTAMP
+    WHERE user_id=#{userId} AND revoked_at IS NULL
+  </update>
+  <insert id="insertUser" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO sys_user(employee_no,real_name,password_hash,dept_id)
+    VALUES(#{employeeNo},#{realName},#{passwordHash},#{deptId})
+  </insert>
+  <insert id="assignAdminRole">
+    INSERT INTO sys_user_role(user_id,role_id)
+    SELECT #{userId},id FROM sys_role WHERE role_code='SUPER_ADMIN' AND deleted=0 AND status=1
+  </insert>
+</mapper>

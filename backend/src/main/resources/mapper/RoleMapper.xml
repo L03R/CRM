@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.RoleMapper">
+  <select id="lockRole" resultType="com.crm.entity.Role">
+    SELECT id,role_name,role_code,data_scope,status,is_builtin,remark
+    FROM sys_role WHERE id=#{id} AND deleted=0 FOR UPDATE
+  </select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO sys_role(role_name,role_code,data_scope,status,remark)
+    VALUES(#{roleName},#{roleCode},#{dataScope},#{status},#{remark})
+  </insert>
+  <update id="update">
+    UPDATE sys_role SET role_name=#{roleName},data_scope=#{dataScope},status=#{status},remark=#{remark}
+    WHERE id=#{id}
+  </update>
+  <select id="countEmployees" resultType="int">
+    SELECT COUNT(*) FROM sys_user_role ur JOIN sys_user u ON u.id=ur.user_id
+    WHERE ur.role_id=#{roleId} AND u.deleted=0
+  </select>
+  <update id="delete">UPDATE sys_role SET deleted=1 WHERE id=#{id}</update>
+  <delete id="deletePermissions">DELETE FROM sys_role_permission WHERE role_id=#{roleId}</delete>
+  <insert id="insertPermissions">
+    INSERT INTO sys_role_permission(role_id,permission_id) VALUES
+    <foreach collection="ids" item="id" separator=",">(#{roleId},#{id})</foreach>
+  </insert>
+</mapper>

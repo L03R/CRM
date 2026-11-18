@@ -1,0 +1,23 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/crm?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    local-cache-scope: statement
+crm:
+  auth:
+    session-hours: 8
+  bootstrap:
+    enabled: false
+    test-employees: false
+    admin-password: ${CRM_ADMIN_PASSWORD:Admin@123456}

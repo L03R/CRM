@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.DashboardMapper">
+  <!-- Report and business scopes are intersected, never combined into a larger scope. -->
+  <sql id="leadAccess">
+    <if test="!${range}.all">
+      AND (l.owner_id=#{${range}.userId} OR l.created_by=#{${range}.userId}
+      <if test="!${range}.deptIds.isEmpty()">
+        OR o.dept_id IN <foreach collection="${range}.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>
+        OR a.dept_id IN <foreach collection="${range}.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>
+        OR (l.owner_id IS NULL AND l.target_dept_id IN <foreach collection="${range}.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>)
+      </if>)
+    </if>
+  </sql>
+  <sql id="customerAccess">
+    <if test="!${range}.all">AND (c.owner_id=#{${range}.userId}
+      <if test="!${range}.deptIds.isEmpty()">OR o.dept_id IN <foreach collection="${range}.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach></if>)
+    </if>
+  </sql>
+  <sql id="source">
+    <choose>
+      <when test="kind == 'lead'">FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id JOIN sys_user a ON a.id=l.created_by WHERE 1=1
+        <include refid="leadAccess"><property name="range" value="scope"/></include>
+        <include refid="leadAccess"><property name="range" value="readScope"/></include>
+      </when>
+      <otherwise>
+        <choose><when test="kind == 'business'">FROM crm_opportunity b JOIN crm_customer c ON c.id=b.customer_id</when><otherwise>FROM crm_customer c</otherwise></choose>
+        LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL
+        <include refid="customerAccess"><property name="range" value="scope"/></include>
+        <include refid="customerAccess"><property name="range" value="readScope"/></include>
+      </otherwise>
+    </choose>
+  </sql>
+  <sql id="created"><choose><when test="kind == 'lead'">l.created_at</when><when test="kind == 'business'">b.created_at</when><otherwise>c.created_at</otherwise></choose></sql>
+  <select id="groups" resultType="com.crm.vo.ChartPointVO">
+    SELECT <choose>
+      <when test="group == 'trend'">DATE_FORMAT(<include refid="created"/>,'%Y-%m-%d')</when>
+      <when test="group == 'source'">l.source</when>
+      <when test="kind == 'lead'">l.status</when>
+      <when test="kind == 'business'">b.stage</when>
+      <otherwise>c.customer_type</otherwise>
+    </choose> AS name, COUNT(*) AS value,
+    <choose><when test="kind == 'business'">COALESCE(SUM(b.expected_amount),0)</when><otherwise>0</otherwise></choose> AS amount
+    <include refid="source"/>
+    <if test="start != null">AND <include refid="created"/> &gt;= #{start} AND <include refid="created"/> &lt; DATE_ADD(#{end},INTERVAL 1 DAY)</if>
+    GROUP BY name ORDER BY name
+  </select>
+  <select id="customerDue" resultType="long">
+    SELECT COUNT(*) FROM crm_customer c LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL
+    <include refid="customerAccess"><property name="range" value="scope"/></include>
+    <choose><when test="overdue">AND c.next_follow_at &lt; NOW()</when><otherwise>AND DATE(c.next_follow_at)=CURRENT_DATE</otherwise></choose>
+  </select>
+  <sql id="todoRows">
+    <choose>
+      <when test="kind == 'leadFollow' or kind == 'leadUpcoming'">
+        SELECT l.id,'LEAD' AS kind,l.company_name AS title,'线索跟进' AS reason,l.next_follow_at AS due_at
+        FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id JOIN sys_user a ON a.id=l.created_by
+        WHERE l.owner_id IS NOT NULL AND l.status='CONTACTING'
+        <include refid="leadAccess"><property name="range" value="scope"/></include>
+        <choose><when test="kind == 'leadUpcoming'">AND l.next_follow_at &gt;= CURRENT_DATE AND l.next_follow_at &lt; DATE_ADD(CURRENT_DATE,INTERVAL 7 DAY)</when><otherwise>AND l.next_follow_at &lt; DATE_ADD(CURRENT_DATE,INTERVAL 1 DAY)</otherwise></choose>
+      </when>
+      <when test="kind == 'assign'">SELECT l.id,'LEAD' AS kind,l.company_name AS title,'待分配线索' AS reason,l.created_at AS due_at
+        FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id WHERE l.owner_id IS NULL AND l.status='PENDING'
+        <if test="!scope.all"><choose><when test="!scope.deptIds.isEmpty()">AND l.target_dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach></when><otherwise>AND 1=0</otherwise></choose></if>
+      </when>
+      <otherwise>
+        SELECT c.id,'CUSTOMER' AS kind,c.company_name AS title,
+        <choose><when test="kind == 'review'">'待审核公海申请' AS reason,pr.created_at AS due_at FROM crm_pool_request pr JOIN crm_customer c ON c.id=pr.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id WHERE pr.status='PENDING' AND c.owner_id IS NOT NULL</when>
+        <otherwise>'客户跟进' AS reason,c.next_follow_at AS due_at FROM crm_customer c LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL
+          <choose><when test="kind == 'upcoming'">AND c.next_follow_at &gt;= CURRENT_DATE AND c.next_follow_at &lt; DATE_ADD(CURRENT_DATE,INTERVAL 7 DAY)</when><otherwise>AND c.next_follow_at &lt; DATE_ADD(CURRENT_DATE,INTERVAL 1 DAY)</otherwise></choose>
+        </otherwise></choose>
+        <include refid="customerAccess"><property name="range" value="scope"/></include>
+      </otherwise>
+    </choose>
+  </sql>
+  <select id="todos" resultType="com.crm.vo.WorkItemVO"><include refid="todoRows"/> ORDER BY due_at,id LIMIT 10</select>
+  <select id="todoCount" resultType="long">SELECT COUNT(*) FROM (<include refid="todoRows"/>) items</select>
+  <select id="schedules" resultType="com.crm.entity.Schedule">SELECT * FROM crm_schedule WHERE user_id=#{userId} AND start_at &lt; DATE_ADD(#{end},INTERVAL 1 DAY) AND end_at &gt;= #{start} ORDER BY start_at,id</select>
+  <sql id="taskUnion">
+    SELECT NULL AS id,'' AS kind,'' AS title,'' AS reason,NULL AS due_at,'' AS task_type WHERE 1=0
+    <if test="scopes.lead != null">
+      UNION ALL SELECT l.id,'LEAD',l.company_name,'线索跟进',l.next_follow_at,'LEAD_FOLLOW'
+      FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id JOIN sys_user a ON a.id=l.created_by
+      WHERE l.owner_id IS NOT NULL AND l.status='CONTACTING' AND l.next_follow_at IS NOT NULL
+      <include refid="leadAccess"><property name="range" value="scopes.lead"/></include>
+    </if>
+    <if test="scopes.customer != null">
+      UNION ALL SELECT c.id,'CUSTOMER',c.company_name,'客户跟进',c.next_follow_at,'CUSTOMER_FOLLOW'
+      FROM crm_customer c LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL AND c.next_follow_at IS NOT NULL
+      <include refid="customerAccess"><property name="range" value="scopes.customer"/></include>
+    </if>
+    <if test="scopes.assign != null">
+      UNION ALL SELECT l.id,'LEAD',l.company_name,'待分配线索',l.created_at,'ASSIGN'
+      FROM crm_lead l WHERE l.owner_id IS NULL AND l.status='PENDING'
+      <if test="!scopes.assign.all"><choose><when test="!scopes.assign.deptIds.isEmpty()">AND l.target_dept_id IN <foreach collection="scopes.assign.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach></when><otherwise>AND 1=0</otherwise></choose></if>
+    </if>
+    <if test="scopes.review != null">
+      UNION ALL SELECT c.id,'CUSTOMER',c.company_name,'待审核公海申请',pr.created_at,'REVIEW'
+      FROM crm_pool_request pr JOIN crm_customer c ON c.id=pr.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id
+      WHERE pr.status='PENDING' AND c.owner_id IS NOT NULL
+      <include refid="customerAccess"><property name="range" value="scopes.review"/></include>
+    </if>
+    <if test="scopes.aftersale != null">
+      UNION ALL SELECT a.id,'AFTERSALE',CONCAT(c.company_name,' · ',a.title),'售后跟进',a.next_follow_at,'AFTERSALE_FOLLOW'
+      FROM crm_aftersale a JOIN crm_customer c ON c.id=a.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id
+      WHERE a.status&lt;&gt;'CLOSED' AND a.next_follow_at IS NOT NULL
+      <include refid="com.crm.mapper.AfterSaleMapper.access"><property name="range" value="scopes.aftersale"/><property name="customerRange" value="scopes.customer"/></include>
+    </if>
+  </sql>
+  <sql id="taskWhere">
+    WHERE 1=1
+    <if test="type != null and type != 'ALL'">AND task_type=#{type}</if>
+    <if test="keyword != null and keyword != ''">AND title LIKE CONCAT('%',#{keyword},'%')</if>
+    <if test="due == 'TODAY'">AND task_type IN('LEAD_FOLLOW','CUSTOMER_FOLLOW','AFTERSALE_FOLLOW') AND DATE(due_at)=CURRENT_DATE</if>
+    <if test="due == 'OVERDUE'">AND task_type IN('LEAD_FOLLOW','CUSTOMER_FOLLOW','AFTERSALE_FOLLOW') AND due_at &lt; NOW()</if>
+    <if test="start != null">AND task_type IN('LEAD_FOLLOW','CUSTOMER_FOLLOW','AFTERSALE_FOLLOW') AND due_at &gt;= #{start} AND due_at &lt; DATE_ADD(#{end},INTERVAL 1 DAY)</if>
+  </sql>
+  <select id="tasks" resultType="com.crm.vo.WorkItemVO">
+    SELECT id,kind,title,reason,due_at FROM (<include refid="taskUnion"/>) tasks <include refid="taskWhere"/>
+    ORDER BY due_at,kind,id,reason <if test="size > 0">LIMIT #{size} OFFSET #{offset}</if>
+  </select>
+  <select id="taskCount" resultType="long">SELECT COUNT(*) FROM (<include refid="taskUnion"/>) tasks <include refid="taskWhere"/></select>
+  <select id="schedule" resultType="com.crm.entity.Schedule">SELECT * FROM crm_schedule WHERE id=#{id} AND user_id=#{userId}</select>
+  <insert id="insertSchedule" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_schedule(user_id,title,description,start_at,end_at,remind_at,priority,status) VALUES(#{userId},#{title},#{description},#{startAt},#{endAt},#{remindAt},#{priority},#{status})</insert>
+  <update id="updateSchedule">UPDATE crm_schedule SET title=#{title},description=#{description},start_at=#{startAt},end_at=#{endAt},remind_at=#{remindAt},priority=#{priority},status=#{status} WHERE id=#{id} AND user_id=#{userId}</update>
+</mapper>

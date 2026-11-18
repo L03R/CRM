@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.ProductAttributeMapper">
+  <select id="definitions" resultType="com.crm.entity.ProductAttribute">
+    SELECT * FROM crm_category_attribute WHERE category_id=#{categoryId} ORDER BY sort_no,id
+  </select>
+  <select id="definition" resultType="com.crm.entity.ProductAttribute">SELECT * FROM crm_category_attribute WHERE id=#{id}</select>
+  <insert id="insertDefinition" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO crm_category_attribute(category_id,attribute_scope,attribute_code,attribute_name,input_type,options_json,unit,required,condition_code,condition_value,decimal_places,sort_no,status)
+    VALUES(#{categoryId},#{attributeScope},#{attributeCode},#{attributeName},#{inputType},#{optionsJson},#{unit},#{required},#{conditionCode},#{conditionValue},#{decimalPlaces},#{sortNo},#{status})
+  </insert>
+  <update id="updateDefinition">
+    UPDATE crm_category_attribute SET attribute_name=#{attributeName},input_type=#{inputType},options_json=#{optionsJson},unit=#{unit},required=#{required},
+      condition_code=#{conditionCode},condition_value=#{conditionValue},decimal_places=#{decimalPlaces},sort_no=#{sortNo},status=#{status} WHERE id=#{id}
+  </update>
+  <delete id="deleteDefinition">DELETE FROM crm_category_attribute WHERE id=#{id}</delete>
+  <select id="countReferences" resultType="int">SELECT COUNT(*) FROM crm_product_attribute_value WHERE attribute_id=#{id}</select>
+  <select id="countUsage" resultType="int">
+    SELECT COUNT(*) FROM crm_product_attribute_value v JOIN crm_category_attribute a ON a.id=v.attribute_id
+    LEFT JOIN crm_product_sku s ON s.id=v.sku_id JOIN crm_product p ON p.id=COALESCE(v.product_id,s.product_id)
+    WHERE a.attribute_scope=#{scope} AND a.attribute_code=#{code} AND p.category_id IN
+    <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </select>
+  <sql id="owner">
+    <choose><when test="productId != null">v.product_id=#{productId}</when><otherwise>v.sku_id=#{skuId}</otherwise></choose>
+  </sql>
+  <select id="values" resultType="com.crm.entity.ProductAttributeValue">
+    SELECT a.attribute_code,v.attribute_id,v.value_json FROM crm_product_attribute_value v
+    JOIN crm_category_attribute a ON a.id=v.attribute_id WHERE <include refid="owner"/>
+  </select>
+  <delete id="deleteValues">DELETE v FROM crm_product_attribute_value v WHERE <include refid="owner"/></delete>
+  <delete id="deleteEditableValues">
+    DELETE v FROM crm_product_attribute_value v JOIN crm_category_attribute a ON a.id=v.attribute_id
+    WHERE <include refid="owner"/> AND a.attribute_code IN
+    <foreach collection="codes" item="code" open="(" separator="," close=")">#{code}</foreach>
+  </delete>
+  <insert id="insertValues">
+    INSERT INTO crm_product_attribute_value(product_id,sku_id,attribute_id,value_json) VALUES
+    <foreach collection="values" item="value" separator=",">(#{productId},#{skuId},#{value.attributeId},#{value.valueJson})</foreach>
+  </insert>
+</mapper>

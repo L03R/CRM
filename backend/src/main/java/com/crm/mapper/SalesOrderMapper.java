@@ -1,0 +1,33 @@
+package com.crm.mapper;
+import com.crm.entity.SalesOrder;
+import com.crm.entity.SalesOrderItem;
+import com.crm.dto.OrderQuery;
+import com.crm.security.DataScope;
+import com.crm.vo.SalesOrderVO;
+import com.crm.vo.OrderEventVO;
+import org.apache.ibatis.annotations.Param;
+import java.util.*;
+public interface SalesOrderMapper {
+    List<SalesOrderVO> page(@Param("scopes") Map<String,DataScope> scopes,@Param("query") OrderQuery query);
+    long count(@Param("scopes") Map<String,DataScope> scopes,@Param("query") OrderQuery query);
+    SalesOrderVO find(Long id);
+    SalesOrderVO findIncludingDeleted(Long id);
+    boolean hasDownstream(Long id);
+    boolean hasPostedShipments(Long id);
+    void softDelete(@Param("id") Long id,@Param("userId") Long userId);
+    SalesOrderVO lock(Long id);
+    SalesOrder byQuotation(Long quotationId);
+    SalesOrder activeByOpportunity(Long opportunityId);
+    List<Long> unfinished(Long customerId);
+    void insert(SalesOrder order);
+    void updateDraft(SalesOrder order);
+    void state(SalesOrder order);
+    List<SalesOrderItem> items(Long orderId);
+    void deleteItems(Long orderId);
+    void retireItem(Long id);
+    int maxSort(Long orderId);
+    void updateItem(SalesOrderItem item);
+    void insertItem(SalesOrderItem item);
+    List<OrderEventVO> events(Long orderId);
+    void event(OrderEventVO event);
+}

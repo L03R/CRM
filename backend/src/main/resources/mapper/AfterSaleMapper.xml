@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.AfterSaleMapper">
+  <sql id="source">FROM crm_aftersale a JOIN crm_customer c ON c.id=a.customer_id
+    LEFT JOIN sys_user o ON o.id=c.owner_id JOIN sys_user own ON own.id=a.owner_id JOIN sys_user creator ON creator.id=a.created_by
+    LEFT JOIN sys_user helper ON helper.id=a.helper_id LEFT JOIN crm_sales_order s ON s.id=a.order_id LEFT JOIN crm_shipment h ON h.id=a.shipment_id
+  </sql>
+  <sql id="select">SELECT a.*,c.company_name customer_name,c.owner_id customer_owner_id,o.dept_id customer_owner_dept_id,
+    own.real_name owner_name,helper.real_name helper_name,creator.real_name creator_name,s.order_no,h.shipment_no,
+    (a.order_id IS NULL AND a.issue_type&lt;&gt;'CONSULTATION') source_pending <include refid="source"/>
+  </sql>
+  <sql id="access">AND (a.owner_id=#{${range}.userId} OR a.helper_id=#{${range}.userId}
+    <if test="${customerRange} != null">OR (
+      (#{${range}.all}=TRUE OR c.owner_id=#{${range}.userId}<if test="!${range}.deptIds.isEmpty()"> OR o.dept_id IN <foreach collection="${range}.deptIds" item="dept" open="(" close=")" separator=",">#{dept}</foreach></if>)
+      AND (#{${customerRange}.all}=TRUE OR c.owner_id=#{${customerRange}.userId}<if test="!${customerRange}.deptIds.isEmpty()"> OR o.dept_id IN <foreach collection="${customerRange}.deptIds" item="dept" open="(" close=")" separator=",">#{dept}</foreach></if>)
+    )</if>)
+  </sql>
+  <sql id="where">WHERE 1=1 <include refid="access"><property name="range" value="scope"/><property name="customerRange" value="customer"/></include>
+    <if test="query.keyword != null and query.keyword != ''">AND (a.case_no LIKE CONCAT('%',#{query.keyword},'%') OR a.title LIKE CONCAT('%',#{query.keyword},'%') OR c.company_name LIKE CONCAT('%',#{query.keyword},'%') OR s.order_no LIKE CONCAT('%',#{query.keyword},'%'))</if>
+    <if test="query.status != null and query.status != ''">AND a.status=#{query.status}</if>
+    <if test="query.issueType != null and query.issueType != ''">AND a.issue_type=#{query.issueType}</if>
+    <if test="query.ownerId != null">AND a.owner_id=#{query.ownerId}</if>
+    <if test="query.sourcePending == true">AND a.order_id IS NULL AND a.issue_type&lt;&gt;'CONSULTATION'</if>
+    <if test="query.overdue == true">AND a.status&lt;&gt;'CLOSED' AND a.next_follow_at&lt;NOW()</if>
+    <if test="query.dateFrom != null">AND a.reported_at&gt;=#{query.dateFrom}</if>
+    <if test="query.dateTo != null">AND a.reported_at&lt;DATE_ADD(#{query.dateTo},INTERVAL 1 DAY)</if>
+  </sql>
+  <select id="page" resultType="com.crm.vo.AfterSaleVO"><include refid="select"/><include refid="where"/> ORDER BY a.id DESC LIMIT #{query.size} OFFSET #{query.offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) <include refid="source"/><include refid="where"/></select>
+  <select id="find" resultType="com.crm.vo.AfterSaleVO"><include refid="select"/> WHERE a.id=#{id}</select>
+  <select id="lock" resultType="com.crm.vo.AfterSaleVO"><include refid="select"/> WHERE a.id=#{id} FOR UPDATE</select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_aftersale(case_no,customer_id,contact_id,order_id,shipment_id,title,issue_type,description,expectation,reporter_name,reporter_contact,reported_at,serial_no,owner_id,next_follow_at,created_by)
+    VALUES(#{caseNo},#{customerId},#{contactId},#{orderId},#{shipmentId},#{title},#{issueType},#{description},#{expectation},#{reporterName},#{reporterContact},#{reportedAt},#{serialNo},#{ownerId},#{nextFollowAt},#{createdBy})</insert>
+  <update id="update">UPDATE crm_aftersale SET contact_id=#{contactId},order_id=#{orderId},shipment_id=#{shipmentId},serial_no=#{serialNo},status=#{status},owner_id=#{ownerId},helper_id=#{helperId},handler_name=#{handlerName},handler_contact=#{handlerContact},next_follow_at=#{nextFollowAt},latest_feedback=#{latestFeedback},resolution_type=#{resolutionType},result_note=#{resultNote},customer_feedback=#{customerFeedback},external_no=#{externalNo},closed_at=#{closedAt},version=version+1 WHERE id=#{id}</update>
+  <select id="items" resultType="com.crm.entity.AfterSaleItem">SELECT * FROM crm_aftersale_item WHERE case_id=#{id} ORDER BY id</select>
+  <delete id="deleteItems">DELETE FROM crm_aftersale_item WHERE case_id=#{id}</delete>
+  <insert id="insertItem">INSERT INTO crm_aftersale_item(case_id,order_item_id,product_name,sku_code,specification,quantity) VALUES(#{caseId},#{orderItemId},#{productName},#{skuCode},#{specification},#{quantity})</insert>
+  <insert id="event">INSERT INTO crm_aftersale_event(case_id,actor_id,action,content,occurred_at) VALUES(#{id},#{userId},#{action},#{content},#{occurredAt})</insert>
+  <select id="events" resultType="com.crm.entity.AfterSaleEvent">SELECT e.*,u.real_name actor_name FROM crm_aftersale_event e JOIN sys_user u ON u.id=e.actor_id WHERE e.case_id=#{id} ORDER BY e.id DESC</select>
+  <select id="orders" resultType="com.crm.vo.AfterSaleOrderOption">SELECT id,order_no,status FROM crm_sales_order WHERE customer_id=#{customerId} AND deleted=0 AND status IN('CONFIRMED','COMPLETED') ORDER BY id DESC</select>
+  <select id="images" resultType="com.crm.entity.AfterSaleImage">SELECT id,case_id,actor_id,filename,mime_type,created_at FROM crm_aftersale_image WHERE case_id=#{id} ORDER BY id</select>
+  <select id="image" resultType="com.crm.entity.AfterSaleImage">SELECT * FROM crm_aftersale_image WHERE case_id=#{caseId} AND id=#{id}</select>
+  <insert id="insertImage" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_aftersale_image(case_id,actor_id,filename,mime_type,image_data) VALUES(#{caseId},#{actorId},#{filename},#{mimeType},#{imageData})</insert>
+  <select id="contacts" resultType="com.crm.entity.Contact">SELECT id,customer_id,contact_name,phone,landline,wechat,email FROM crm_contact WHERE customer_id=#{customerId} AND status=1 ORDER BY is_primary DESC,id</select>
+  <select id="owners" resultType="map">SELECT DISTINCT a.owner_id id,own.real_name name <include refid="source"/> WHERE 1=1 <include refid="access"><property name="range" value="scope"/><property name="customerRange" value="customer"/></include> ORDER BY a.owner_id</select>
+</mapper>

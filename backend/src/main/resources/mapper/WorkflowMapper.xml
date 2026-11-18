@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.WorkflowMapper">
+  <select id="grants" resultType="com.crm.vo.WorkflowGrantVO">
+    SELECT p.permission_code,r.data_scope FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id
+    JOIN sys_role_permission rp ON rp.role_id=r.id JOIN sys_permission p ON p.id=rp.permission_id
+    WHERE ur.user_id=#{userId} AND r.status=1 AND r.deleted=0 AND p.status=1 AND p.permission_type=3
+  </select>
+  <select id="owners" resultType="com.crm.vo.WorkflowOwnerVO">
+    SELECT u.id,u.employee_no,u.real_name,u.dept_id FROM sys_user u JOIN sys_dept d ON d.id=u.dept_id
+    WHERE u.status=1 AND u.employment_status=1 AND u.deleted=0 AND d.status=1 AND d.deleted=0
+    AND (SELECT COUNT(DISTINCT p.permission_code) FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id
+      JOIN sys_role_permission rp ON rp.role_id=r.id JOIN sys_permission p ON p.id=rp.permission_id
+      WHERE ur.user_id=u.id AND r.status=1 AND r.deleted=0 AND p.status=1 AND p.permission_code IN('clue:convert','customer:list'))=2 ORDER BY u.id
+  </select>
+  <sql id="leadSelect">
+    SELECT l.*,o.real_name AS owner_name,o.dept_id AS owner_dept_id,a.real_name AS creator_name,a.dept_id AS creator_dept_id,
+      d.dept_name AS target_dept_name,cx.id AS converted_customer_id
+    FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id JOIN sys_user a ON a.id=l.created_by
+    JOIN sys_dept d ON d.id=l.target_dept_id LEFT JOIN crm_customer cx ON cx.source_lead_id=l.id
+  </sql>
+  <sql id="owned">
+    <if test="!scope.all">
+      AND (c.owner_id=#{scope.userId}
+      <if test="!scope.deptIds.isEmpty()"> OR o.dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach></if>)
+    </if>
+  </sql>
+  <sql id="leadWhere">
+    WHERE 1=1
+    <if test="!scope.all">
+      AND (l.owner_id=#{scope.userId} OR l.created_by=#{scope.userId}
+      <if test="!scope.deptIds.isEmpty()">
+        OR o.dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>
+        OR a.dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>
+        OR (l.owner_id IS NULL AND l.target_dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach>)
+      </if>)
+    </if>
+    <if test="keyword != null and keyword != ''">AND (l.company_name LIKE CONCAT('%',#{keyword},'%') OR l.contact_name LIKE CONCAT('%',#{keyword},'%'))</if>
+    <if test="status != null and status != ''">AND l.status=#{status}</if>
+  </sql>
+  <select id="lead" resultType="com.crm.vo.LeadVO"><include refid="leadSelect"/> WHERE l.id=#{id}<if test="lock"> FOR UPDATE</if></select>
+  <select id="leads" resultType="com.crm.vo.LeadVO"><include refid="leadSelect"/><include refid="leadWhere"/> ORDER BY l.id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="leadCount" resultType="long">SELECT COUNT(*) FROM crm_lead l LEFT JOIN sys_user o ON o.id=l.owner_id JOIN sys_user a ON a.id=l.created_by <include refid="leadWhere"/></select>
+  <insert id="insertLead" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO crm_lead(company_name,customer_type,region,source,contact_name,phone,email,contact_key,demand,target_dept_id,owner_id,created_by,status,next_follow_at)
+    VALUES(#{companyName},#{customerType},#{region},#{source},#{contactName},#{phone},#{email},#{contactKey},#{demand},#{targetDeptId},#{ownerId},#{createdBy},#{status},#{nextFollowAt})
+  </insert>
+  <update id="updateLead">UPDATE crm_lead SET company_name=#{companyName},customer_type=#{customerType},region=#{region},source=#{source},contact_name=#{contactName},phone=#{phone},email=#{email},contact_key=#{contactKey},demand=#{demand},target_dept_id=#{targetDeptId},next_follow_at=#{nextFollowAt} WHERE id=#{id}</update>
+  <update id="leadState">UPDATE crm_lead SET owner_id=#{ownerId},status=#{status},close_reason=#{closeReason} WHERE id=#{id}</update>
+  <sql id="customerSelect">
+    SELECT c.id,c.owner_id,c.pool_dept_id,c.created_by,c.source_lead_id,c.company_name,c.customer_type,c.region,c.source,c.address,c.remark,c.relationship,c.protected_customer,c.last_follow_at,c.next_follow_at,c.created_at,c.updated_at,COALESCE(pc.contact_name,'') AS contact_name,COALESCE(pc.phone,'') AS phone,COALESCE(pc.email,'') AS email,o.real_name AS owner_name,o.dept_id AS owner_dept_id,a.real_name AS creator_name,d.dept_name AS pool_dept_name,sc.real_name AS source_creator_name,
+      pr.id AS pending_request_id,pr.reason AS pool_request_reason,
+      (SELECT COUNT(*) FROM crm_opportunity b WHERE b.customer_id=c.id AND b.stage NOT IN('WON','LOST')) AS active_opportunities
+    FROM crm_customer c LEFT JOIN crm_contact pc ON pc.customer_id=c.id AND pc.is_primary=1 AND pc.status=1 LEFT JOIN sys_user o ON o.id=c.owner_id JOIN sys_user a ON a.id=c.created_by
+    JOIN sys_dept d ON d.id=c.pool_dept_id LEFT JOIN crm_pool_request pr ON pr.customer_id=c.id AND pr.status='PENDING'
+    LEFT JOIN crm_lead sl ON sl.id=c.source_lead_id LEFT JOIN sys_user sc ON sc.id=sl.created_by
+  </sql>
+  <sql id="customerWhere">
+    WHERE 1=1
+    <choose>
+      <when test="pool">
+        AND c.owner_id IS NULL
+        <if test="!scope.all">AND (c.pool_dept_id=#{scope.userDeptId}<if test="!scope.deptIds.isEmpty()"> OR c.pool_dept_id IN <foreach collection="scope.deptIds" item="d" open="(" separator="," close=")">#{d}</foreach></if>)</if>
+      </when>
+      <otherwise>AND c.owner_id IS NOT NULL <include refid="owned"/></otherwise>
+    </choose>
+    <if test="keyword != null and keyword != ''">AND (c.company_name LIKE CONCAT('%',#{keyword},'%') OR pc.contact_name LIKE CONCAT('%',#{keyword},'%'))</if>
+  </sql>
+  <select id="customer" resultType="com.crm.vo.CustomerVO"><include refid="customerSelect"/> WHERE c.id=#{id}<if test="lock"> FOR UPDATE</if></select>
+  <select id="customerByName" resultType="com.crm.vo.CustomerVO"><include refid="customerSelect"/> WHERE c.company_name=#{name}</select>
+  <select id="customers" resultType="com.crm.vo.CustomerVO"><include refid="customerSelect"/><include refid="customerWhere"/> ORDER BY c.id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="customerCount" resultType="long">SELECT COUNT(*) FROM crm_customer c LEFT JOIN crm_contact pc ON pc.customer_id=c.id AND pc.is_primary=1 AND pc.status=1 LEFT JOIN sys_user o ON o.id=c.owner_id <include refid="customerWhere"/></select>
+  <insert id="insertCustomer" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO crm_customer(company_name,customer_type,region,source,contact_name,phone,email,address,remark,owner_id,pool_dept_id,created_by,source_lead_id,relationship,protected_customer,last_follow_at,next_follow_at)
+    VALUES(#{companyName},#{customerType},#{region},#{source},#{contactName},#{phone},#{email},#{address},#{remark},#{ownerId},#{poolDeptId},#{createdBy},#{sourceLeadId},#{relationship},#{protectedCustomer},#{lastFollowAt},#{nextFollowAt})
+  </insert>
+  <update id="updateCustomer">UPDATE crm_customer SET company_name=#{companyName},customer_type=#{customerType},region=#{region},source=#{source},address=#{address},remark=#{remark},relationship=#{relationship},protected_customer=#{protectedCustomer} WHERE id=#{id}</update>
+  <update id="customerOwner">UPDATE crm_customer SET owner_id=#{ownerId},pool_dept_id=#{poolDeptId} WHERE id=#{id}</update>
+  <insert id="insertFollow" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO crm_follow_record(lead_id,customer_id,created_by,method,content,occurred_at,next_follow_at,contact_id,contact_name_snapshot)
+    VALUES(#{leadId},#{customerId},#{createdBy},#{method},#{content},#{occurredAt},#{nextFollowAt},#{contactId},#{contactNameSnapshot})
+  </insert>
+  <update id="followDates">
+    UPDATE <choose><when test="leadId != null">crm_lead</when><otherwise>crm_customer</otherwise></choose>
+    SET last_follow_at=GREATEST(COALESCE(last_follow_at,#{occurredAt}),#{occurredAt}),next_follow_at=#{nextFollowAt}
+    WHERE id=<choose><when test="leadId != null">#{leadId}</when><otherwise>#{customerId}</otherwise></choose>
+  </update>
+  <select id="resourceFollows" resultType="com.crm.vo.FollowVO">
+    SELECT f.*,u.real_name AS author_name,IF(f.lead_id IS NULL,'CUSTOMER','LEAD') AS resource_type
+    FROM crm_follow_record f JOIN sys_user u ON u.id=f.created_by WHERE
+    <choose><when test="leadId != null">f.lead_id=#{leadId}</when><otherwise>(f.customer_id=#{customerId}<if test="sourceLeadId != null"> OR f.lead_id=#{sourceLeadId}</if>)</otherwise></choose>
+    ORDER BY f.occurred_at DESC,f.id DESC
+  </select>
+  <sql id="followFrom">
+    FROM crm_follow_record f JOIN crm_customer c ON (f.customer_id=c.id OR (f.customer_id IS NULL AND f.lead_id=c.source_lead_id))
+    LEFT JOIN sys_user o ON o.id=c.owner_id JOIN sys_user u ON u.id=f.created_by
+    WHERE c.owner_id IS NOT NULL <include refid="owned"/>
+    <if test="keyword != null and keyword != ''">AND (c.company_name LIKE CONCAT('%',#{keyword},'%') OR f.content LIKE CONCAT('%',#{keyword},'%'))</if>
+    <if test="due == 'TODAY'">AND DATE(c.next_follow_at)=CURRENT_DATE</if>
+    <if test="due == 'OVERDUE'">AND c.next_follow_at &lt; CURRENT_TIMESTAMP</if>
+  </sql>
+  <select id="followPage" resultType="com.crm.vo.FollowVO">SELECT f.id,f.lead_id,f.contact_id,f.contact_name_snapshot,c.id AS customer_id,f.created_by,f.method,f.content,f.occurred_at,f.created_at,c.next_follow_at,c.company_name,u.real_name AS author_name,IF(f.lead_id IS NULL,'CUSTOMER','LEAD') AS resource_type <include refid="followFrom"/> ORDER BY f.occurred_at DESC,f.id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="followCount" resultType="long">SELECT COUNT(*) <include refid="followFrom"/></select>
+  <insert id="insertPoolRequest" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_pool_request(customer_id,requested_by,reason) VALUES(#{customerId},#{requestedBy},#{reason})</insert>
+  <select id="poolRequest" resultType="com.crm.entity.PoolRequest">SELECT * FROM crm_pool_request WHERE id=#{id}</select>
+  <select id="customerPoolRequests" resultType="com.crm.entity.PoolRequest">SELECT * FROM crm_pool_request WHERE customer_id=#{customerId} ORDER BY id DESC</select>
+  <update id="reviewPoolRequest">UPDATE crm_pool_request SET status=#{status},reviewed_by=#{reviewedBy},review_note=#{reviewNote},reviewed_at=CURRENT_TIMESTAMP WHERE id=#{id}</update>
+  <insert id="insertEvent">INSERT INTO crm_ownership_event(resource_type,resource_id,from_user_id,to_user_id,actor_id,action,reason) VALUES(#{resourceType},#{resourceId},#{fromUserId},#{toUserId},#{actorId},#{action},#{reason})</insert>
+  <select id="events" resultType="com.crm.entity.OwnershipEvent">
+    SELECT e.*,a.real_name AS actor_name,f.real_name AS from_name,t.real_name AS to_name FROM crm_ownership_event e
+    JOIN sys_user a ON a.id=e.actor_id LEFT JOIN sys_user f ON f.id=e.from_user_id LEFT JOIN sys_user t ON t.id=e.to_user_id
+    WHERE e.resource_type=#{type} AND e.resource_id=#{id} ORDER BY e.id DESC
+  </select>
+  <sql id="opportunitySelect">SELECT b.*,c.company_name AS customer_name,c.owner_id,o.dept_id AS owner_dept_id,o.real_name AS owner_name FROM crm_opportunity b JOIN crm_customer c ON c.id=b.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id</sql>
+  <sql id="opportunityWhere">
+    WHERE c.owner_id IS NOT NULL <include refid="owned"/>
+    <if test="keyword != null and keyword != ''">AND (b.title LIKE CONCAT('%',#{keyword},'%') OR c.company_name LIKE CONCAT('%',#{keyword},'%'))</if>
+    <if test="customerId != null">AND b.customer_id=#{customerId}</if>
+    <if test="stage != null and stage != ''">AND b.stage=#{stage}</if>
+  </sql>
+  <select id="opportunity" resultType="com.crm.vo.OpportunityVO"><include refid="opportunitySelect"/> WHERE b.id=#{id}</select>
+  <select id="lockOpportunity" resultType="com.crm.vo.OpportunityVO"><include refid="opportunitySelect"/> WHERE b.id=#{id} FOR UPDATE</select>
+  <select id="activeOpportunityIds" resultType="long">SELECT id FROM crm_opportunity WHERE customer_id=#{customerId} AND stage NOT IN('WON','LOST') FOR UPDATE</select>
+  <select id="opportunities" resultType="com.crm.vo.OpportunityVO"><include refid="opportunitySelect"/><include refid="opportunityWhere"/> ORDER BY b.id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="opportunityCount" resultType="long">SELECT COUNT(*) FROM crm_opportunity b JOIN crm_customer c ON c.id=b.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id <include refid="opportunityWhere"/></select>
+  <insert id="insertOpportunity" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_opportunity(customer_id,title,expected_amount,expected_close_date,stage,remark,created_by,close_reason) VALUES(#{customerId},#{title},#{expectedAmount},#{expectedCloseDate},#{stage},#{remark},#{createdBy},#{closeReason})</insert>
+  <update id="updateOpportunity">UPDATE crm_opportunity SET title=#{title},expected_amount=#{expectedAmount},expected_close_date=#{expectedCloseDate},stage=#{stage},remark=#{remark},close_reason=#{closeReason} WHERE id=#{id}</update>
+</mapper>

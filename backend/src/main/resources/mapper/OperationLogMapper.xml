@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.OperationLogMapper">
+  <insert id="insert">INSERT INTO sys_operation_log(user_id,employee_no,real_name,operation,http_method,resource) VALUES(#{userId},#{employeeNo},#{realName},#{operation},#{httpMethod},#{resource})</insert>
+  <sql id="where">FROM sys_operation_log <where><if test="keyword != null and keyword != ''">employee_no LIKE CONCAT('%',#{keyword},'%') OR real_name LIKE CONCAT('%',#{keyword},'%') OR operation LIKE CONCAT('%',#{keyword},'%')</if></where></sql>
+  <select id="page" resultType="com.crm.entity.OperationLog">SELECT * <include refid="where"/> ORDER BY id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) <include refid="where"/></select>
+</mapper>

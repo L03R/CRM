@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.ContactMapper">
+  <sql id="from">FROM crm_contact t JOIN crm_customer c ON c.id=t.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id</sql>
+  <sql id="where">
+    WHERE 1=1
+    <if test="!pool">AND c.owner_id IS NOT NULL
+      <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scope"/></include>
+      <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="readScope"/></include>
+    </if>
+    <if test="customerId != null">AND t.customer_id=#{customerId}</if>
+    <if test="status != null">AND t.status=#{status}</if>
+    <if test="keyword != null and keyword != ''">AND (t.contact_name LIKE CONCAT('%',#{keyword},'%') OR c.company_name LIKE CONCAT('%',#{keyword},'%') OR t.phone LIKE CONCAT('%',#{keyword},'%') OR t.landline LIKE CONCAT('%',#{keyword},'%') OR t.wechat LIKE CONCAT('%',#{keyword},'%') OR t.email LIKE CONCAT('%',#{keyword},'%') OR t.job_title LIKE CONCAT('%',#{keyword},'%'))</if>
+  </sql>
+  <select id="page" resultType="com.crm.vo.ContactVO">SELECT t.*,c.company_name,o.real_name AS owner_name <include refid="from"/><include refid="where"/> ORDER BY t.is_primary DESC,t.id LIMIT #{size} OFFSET #{offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) <include refid="from"/><include refid="where"/></select>
+  <select id="find" resultType="com.crm.vo.ContactVO">SELECT t.*,c.company_name,o.real_name AS owner_name <include refid="from"/> WHERE t.id=#{id}</select>
+  <select id="lock" resultType="com.crm.vo.ContactVO">SELECT t.*,c.company_name,o.real_name AS owner_name <include refid="from"/> WHERE t.id=#{id} FOR UPDATE</select>
+  <select id="primary" resultType="com.crm.entity.Contact">SELECT * FROM crm_contact WHERE customer_id=#{customerId} AND is_primary=1 AND status=1 FOR UPDATE</select>
+  <select id="customers" resultType="com.crm.vo.ContactCustomerVO">
+    SELECT c.id,c.company_name FROM crm_customer c LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scope"/></include>
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="readScope"/></include>
+    <if test="keyword != null and keyword != ''">AND c.company_name LIKE CONCAT('%',#{keyword},'%')</if> ORDER BY c.id DESC LIMIT 50
+  </select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_contact(customer_id,contact_name,job_title,phone,landline,wechat,email,is_primary,status,remark) VALUES(#{customerId},#{contactName},#{jobTitle},#{phone},#{landline},#{wechat},#{email},#{isPrimary},#{status},#{remark})</insert>
+  <update id="update">UPDATE crm_contact SET contact_name=#{contactName},job_title=#{jobTitle},phone=#{phone},landline=#{landline},wechat=#{wechat},email=#{email},is_primary=#{isPrimary},status=#{status},remark=#{remark} WHERE id=#{id}</update>
+  <update id="clearPrimary">UPDATE crm_contact SET is_primary=0 WHERE customer_id=#{customerId} AND is_primary=1</update>
+  <update id="setPrimary">UPDATE crm_contact SET is_primary=1 WHERE id=#{id} AND status=1</update>
+  <select id="firstActive" resultType="long">SELECT id FROM crm_contact WHERE customer_id=#{customerId} AND status=1 ORDER BY id LIMIT 1 FOR UPDATE</select>
+</mapper>

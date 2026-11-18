@@ -1,0 +1,31 @@
+package com.crm.mapper;
+import com.crm.entity.*;
+import com.crm.vo.*;
+import com.crm.security.DataScope;
+import org.apache.ibatis.annotations.Param;
+import java.util.*;
+public interface QuotationMapper {
+    List<QuotationVO> page(@Param("scopes") Map<String,DataScope> scopes,@Param("customerId") Long customerId,@Param("opportunityId") Long opportunityId,@Param("keyword") String keyword,@Param("status") String status,@Param("onlyFinal") boolean onlyFinal,@Param("offset") int offset,@Param("size") int size);
+    long count(@Param("scopes") Map<String,DataScope> scopes,@Param("customerId") Long customerId,@Param("opportunityId") Long opportunityId,@Param("keyword") String keyword,@Param("status") String status,@Param("onlyFinal") boolean onlyFinal);
+    QuotationVO find(Long id);
+    QuotationVO lock(Long id);
+    Quotation latest(String quoteNo);
+    List<QuotationItem> items(Long quotationId);
+    List<QuotationEvent> events(Long quotationId);
+    List<Quotation> versions(@Param("quoteNo") String quoteNo,@Param("scopes") Map<String,DataScope> scopes);
+    int maxVersion(String quoteNo);
+    boolean hasReferences(Long id);
+    boolean hasActiveOrders(Long id);
+    void softDelete(@Param("id") Long id,@Param("userId") Long userId);
+    void insert(Quotation quote);
+    void updateDraft(Quotation quote);
+    void updateState(Quotation quote);
+    void clearFinal(Long opportunityId);
+    Long finalId(Long opportunityId);
+    void deleteItems(Long quotationId);
+    void insertItem(QuotationItem item);
+    void event(@Param("id") Long id,@Param("userId") Long userId,@Param("action") String action,@Param("note") String note);
+    List<Long> skuIds(String keyword);
+    List<OpportunityVO> opportunities(@Param("scopes") Map<String,DataScope> scopes,@Param("customerId") Long customerId,@Param("keyword") String keyword);
+    List<Long> activeCustomerQuotes(Long customerId);
+}

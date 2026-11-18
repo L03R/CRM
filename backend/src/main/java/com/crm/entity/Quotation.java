@@ -1,0 +1,41 @@
+package com.crm.entity;
+import lombok.Data;
+import java.math.BigDecimal;
+import java.time.*;
+@Data
+public class Quotation {
+    private Long id;
+    private String quoteNo;
+    private Integer versionNo;
+    private Long previousId;
+    private Long customerId;
+    private Long opportunityId;
+    private Long contactId;
+    private Long createdBy;
+    private String title;
+    private String status;
+    private Boolean isFinal;
+    private LocalDate quoteDate;
+    private LocalDate validUntil;
+    private String currency;
+    private String taxMode;
+    private String paymentTerms;
+    private String deliveryTerms;
+    private String freightTerms;
+    private String remark;
+    private String customerName;
+    private String contactName;
+    private String contactPhone;
+    private String contactLandline;
+    private String contactWechat;
+    private String contactEmail;
+    private String sellerName;
+    private BigDecimal totalAmount;
+    private LocalDateTime sentAt;
+    private LocalDateTime acceptedAt;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private Boolean deleted;
+    private java.time.LocalDateTime deletedAt;
+    private Long deletedBy;
+}

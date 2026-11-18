@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.DeliveryMapper">
+  <insert id="ensure">INSERT IGNORE INTO crm_order_delivery(order_id) VALUES(#{orderId})</insert>
+  <sql id="shipped">SELECT i.order_item_id,SUM(i.quantity) quantity FROM crm_shipment_item i JOIN crm_shipment h ON h.id=i.shipment_id WHERE h.status='POSTED' GROUP BY i.order_item_id</sql>
+  <sql id="source">FROM crm_order_delivery d JOIN crm_sales_order s ON s.id=d.order_id JOIN crm_customer c ON c.id=s.customer_id
+    LEFT JOIN sys_user o ON o.id=c.owner_id LEFT JOIN sys_user m ON m.id=d.manager_id LEFT JOIN sys_user p ON p.id=d.production_id LEFT JOIN sys_user w ON w.id=d.warehouse_id
+  </sql>
+  <sql id="status">CASE WHEN s.status='CANCELLED' THEN 'CANCELLED' WHEN s.status='COMPLETED' THEN 'COMPLETED'
+    WHEN NOT EXISTS(SELECT 1 FROM crm_sales_order_item i LEFT JOIN (<include refid="shipped"/>) sent ON sent.order_item_id=i.id WHERE i.order_id=s.id AND i.active=1 AND i.quantity&gt;COALESCE(sent.quantity,0)) THEN 'SHIPPED'
+    WHEN EXISTS(SELECT 1 FROM crm_shipment h WHERE h.order_id=s.id AND h.status='POSTED') THEN 'PARTIAL'
+    ELSE d.preparation END</sql>
+  <sql id="select">SELECT d.*,s.order_no,s.status order_status,s.customer_id,s.opportunity_id,s.version order_version,c.company_name customer_name,
+    c.owner_id,o.dept_id owner_dept_id,o.real_name owner_name,m.real_name manager_name,p.real_name production_name,w.real_name warehouse_name,
+    s.promised_date,s.requested_date,s.recipient_name,s.recipient_phone,s.shipping_address,
+    (<include refid="status"/>) status,(s.promised_date&lt;CURRENT_DATE AND s.status='CONFIRMED' AND EXISTS(SELECT 1 FROM crm_sales_order_item i LEFT JOIN (<include refid="shipped"/>) sent ON sent.order_item_id=i.id WHERE i.order_id=s.id AND i.active=1 AND i.quantity&gt;COALESCE(sent.quantity,0))) overdue
+    <include refid="source"/>
+  </sql>
+  <select id="find" resultType="com.crm.vo.DeliveryVO"><include refid="select"/> WHERE d.order_id=#{orderId} AND s.deleted=0</select>
+  <sql id="access">AND (d.manager_id=#{scope.userId} OR d.production_id=#{scope.userId} OR d.warehouse_id=#{scope.userId}
+    <if test="customer != null">OR (
+      (#{scope.all}=TRUE OR c.owner_id=#{scope.userId}<if test="!scope.deptIds.isEmpty()"> OR o.dept_id IN <foreach collection="scope.deptIds" item="dept" open="(" close=")" separator=",">#{dept}</foreach></if>)
+      AND (#{customer.all}=TRUE OR c.owner_id=#{customer.userId}<if test="!customer.deptIds.isEmpty()"> OR o.dept_id IN <foreach collection="customer.deptIds" item="dept" open="(" close=")" separator=",">#{dept}</foreach></if>)
+    )</if>)</sql>
+  <sql id="where">WHERE s.deleted=0 AND s.status IN('CONFIRMED','COMPLETED','CANCELLED') <include refid="access"/>
+    <if test="query.keyword != null and query.keyword != ''">AND (s.order_no LIKE CONCAT('%',#{query.keyword},'%') OR c.company_name LIKE CONCAT('%',#{query.keyword},'%') OR m.real_name LIKE CONCAT('%',#{query.keyword},'%'))</if>
+    <if test="query.status != null and query.status != ''">AND (<include refid="status"/>)=#{query.status}</if>
+    <if test="query.overdue == true">AND s.status='CONFIRMED' AND s.promised_date&lt;CURRENT_DATE AND (<include refid="status"/>) NOT IN('SHIPPED','COMPLETED')</if>
+  </sql>
+  <select id="page" resultType="com.crm.vo.DeliveryVO"><include refid="select"/><include refid="where"/> ORDER BY s.id DESC LIMIT #{query.size} OFFSET #{query.offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) <include refid="source"/><include refid="where"/></select>
+  <select id="lines" resultType="com.crm.vo.DeliveryLineVO">SELECT i.id,i.sku_id,i.product_name,i.sku_code,i.specification,i.requirements,i.unit,i.quantity,COALESCE(sent.quantity,0) shipped_quantity
+    FROM crm_sales_order_item i LEFT JOIN (<include refid="shipped"/>) sent ON sent.order_item_id=i.id WHERE i.order_id=#{orderId} AND i.active=1 ORDER BY i.sort_no
+  </select>
+  <update id="update">UPDATE crm_order_delivery SET manager_id=#{managerId},production_id=#{productionId},warehouse_id=#{warehouseId},preparation=#{preparation},started=#{started},expected_date=#{expectedDate},exception_note=#{exceptionNote},production_ack=#{productionAck},warehouse_ack=#{warehouseAck},version=version+1 WHERE order_id=#{orderId}</update>
+  <insert id="event">INSERT INTO crm_delivery_event(order_id,actor_id,action,note) VALUES(#{orderId},#{actorId},#{action},#{note})</insert>
+  <select id="events" resultType="com.crm.vo.DeliveryEventVO">SELECT e.*,u.real_name actor_name FROM crm_delivery_event e JOIN sys_user u ON u.id=e.actor_id WHERE e.order_id=#{orderId} ORDER BY e.id DESC</select>
+  <select id="users" resultType="com.crm.entity.User">SELECT id,real_name,employee_no,dept_id,status,employment_status,deleted FROM sys_user WHERE status=1 AND employment_status=1 AND deleted=0 ORDER BY id</select>
+  <sql id="shipmentSelect">SELECT h.*,u.real_name actor_name,s.order_no,c.company_name customer_name FROM crm_shipment h JOIN sys_user u ON u.id=h.actor_id JOIN crm_sales_order s ON s.id=h.order_id JOIN crm_customer c ON c.id=s.customer_id</sql>
+  <select id="shipment" resultType="com.crm.entity.Shipment"><include refid="shipmentSelect"/> WHERE h.id=#{id}</select>
+  <select id="byRequest" resultType="com.crm.entity.Shipment">SELECT * FROM crm_shipment WHERE order_id=#{orderId} AND request_key=#{requestKey}</select>
+  <select id="shipments" resultType="com.crm.entity.Shipment"><include refid="shipmentSelect"/> WHERE h.order_id=#{orderId} ORDER BY h.id DESC</select>
+  <select id="shipmentItems" resultType="com.crm.entity.ShipmentItem">SELECT * FROM crm_shipment_item WHERE shipment_id=#{id} ORDER BY id</select>
+  <insert id="insertShipment" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_shipment(order_id,request_key,shipment_no,shipped_at,recipient_name,recipient_phone,shipping_address,carrier,tracking_no,remark,actor_id) VALUES(#{orderId},#{requestKey},#{shipmentNo},#{shippedAt},#{recipientName},#{recipientPhone},#{shippingAddress},#{carrier},#{trackingNo},#{remark},#{actorId})</insert>
+  <insert id="insertShipmentItem">INSERT INTO crm_shipment_item(shipment_id,order_id,order_item_id,product_name,sku_code,specification,unit,quantity) VALUES(#{shipmentId},#{orderId},#{orderItemId},#{productName},#{skuCode},#{specification},#{unit},#{quantity})</insert>
+  <update id="voidShipment">UPDATE crm_shipment SET status='VOID',void_reason=#{reason} WHERE id=#{id}</update>
+  <sql id="shipmentSource">FROM crm_shipment h JOIN crm_order_delivery d ON d.order_id=h.order_id JOIN crm_sales_order s ON s.id=h.order_id JOIN crm_customer c ON c.id=s.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id LEFT JOIN sys_user m ON m.id=d.manager_id JOIN sys_user a ON a.id=h.actor_id</sql>
+  <sql id="shipmentWhere">WHERE s.deleted=0 <include refid="access"/>
+    <if test="query.keyword != null and query.keyword != ''">AND (h.shipment_no LIKE CONCAT('%',#{query.keyword},'%') OR h.tracking_no LIKE CONCAT('%',#{query.keyword},'%') OR s.order_no LIKE CONCAT('%',#{query.keyword},'%') OR c.company_name LIKE CONCAT('%',#{query.keyword},'%'))</if>
+    <if test="query.status != null and query.status != ''">AND h.status=#{query.status}</if>
+  </sql>
+  <select id="shipmentPage" resultType="com.crm.entity.Shipment">SELECT h.*,s.order_no,c.company_name customer_name,a.real_name actor_name <include refid="shipmentSource"/><include refid="shipmentWhere"/> ORDER BY h.id DESC LIMIT #{query.size} OFFSET #{query.offset}</select>
+  <select id="shipmentCount" resultType="long">SELECT COUNT(*) <include refid="shipmentSource"/><include refid="shipmentWhere"/></select>
+</mapper>

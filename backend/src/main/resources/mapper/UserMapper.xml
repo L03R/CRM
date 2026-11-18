@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.UserMapper">
+  <select id="lockEnabledDepartment" resultType="long">
+    SELECT id FROM sys_dept WHERE id=#{id} AND deleted=0 AND status=1 FOR UPDATE
+  </select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO sys_user(employee_no,real_name,password_hash,dept_id,phone,email,hire_date,remark)
+    VALUES(#{employeeNo},#{realName},#{passwordHash},#{deptId},#{phone},#{email},#{hireDate},#{remark})
+  </insert>
+  <select id="lockUser" resultType="com.crm.entity.User">
+    SELECT id,employee_no,real_name,password_hash,dept_id,status,employment_status,deleted,phone,email,hire_date,remark
+    FROM sys_user WHERE id=#{id} AND deleted=0 FOR UPDATE
+  </select>
+  <update id="update">UPDATE sys_user SET real_name=#{realName},dept_id=#{deptId},phone=#{phone},email=#{email},hire_date=#{hireDate},remark=#{remark} WHERE id=#{id}</update>
+  <update id="updateState">UPDATE sys_user SET status=#{status},employment_status=#{employmentStatus} WHERE id=#{id}</update>
+  <update id="updatePassword">UPDATE sys_user SET password_hash=#{hash} WHERE id=#{id}</update>
+  <update id="clearLeader">UPDATE sys_dept SET leader_user_id=NULL WHERE leader_user_id=#{userId}</update>
+  <select id="options" resultType="com.crm.vo.EmployeeOptionVO">SELECT id,employee_no,real_name FROM sys_user WHERE deleted=0 AND employment_status=1 AND status=1 ORDER BY id</select>
+  <select id="lockAdminRole" resultType="long">
+    SELECT id FROM sys_role WHERE role_code='SUPER_ADMIN' FOR UPDATE
+  </select>
+  <select id="findAvailableRoles" resultType="com.crm.entity.Role">
+    SELECT id,role_name,role_code,data_scope FROM sys_role WHERE status=1 AND deleted=0 AND id IN
+    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </select>
+  <select id="countOtherAdmins" resultType="int">
+    SELECT COUNT(*) FROM sys_user u JOIN sys_user_role ur ON ur.user_id=u.id
+    JOIN sys_role r ON r.id=ur.role_id
+    WHERE r.role_code='SUPER_ADMIN' AND r.status=1 AND r.deleted=0
+      AND u.status=1 AND u.employment_status=1 AND u.deleted=0 AND u.id != #{userId}
+  </select>
+  <delete id="deleteRoles">DELETE FROM sys_user_role WHERE user_id=#{userId}</delete>
+  <insert id="insertRoles">
+    INSERT INTO sys_user_role(user_id,role_id) VALUES
+    <foreach collection="roleIds" item="id" separator=",">(#{userId},#{id})</foreach>
+  </insert>
+</mapper>

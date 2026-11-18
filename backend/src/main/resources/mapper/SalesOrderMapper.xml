@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.SalesOrderMapper">
+  <sql id="select">SELECT s.*,c.company_name AS customer_name,c.owner_id,o.dept_id AS owner_dept_id,o.real_name AS owner_name,b.title AS opportunity_title,q.quote_no,q.version_no FROM crm_sales_order s JOIN crm_customer c ON c.id=s.customer_id JOIN crm_opportunity b ON b.id=s.opportunity_id JOIN crm_quotation q ON q.id=s.quotation_id LEFT JOIN sys_user o ON o.id=c.owner_id</sql>
+  <sql id="where">WHERE s.deleted=0 AND c.owner_id IS NOT NULL
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scopes.order"/></include>
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scopes.customer"/></include>
+    <if test="query.keyword != null and query.keyword != ''">AND (s.order_no LIKE CONCAT('%',#{query.keyword},'%') OR c.company_name LIKE CONCAT('%',#{query.keyword},'%') OR q.quote_no LIKE CONCAT('%',#{query.keyword},'%') OR o.real_name LIKE CONCAT('%',#{query.keyword},'%'))</if>
+    <if test="query.status != null and query.status != ''">AND s.status=#{query.status}</if>
+    <if test="query.dateFrom != null">AND s.created_at &gt;= #{query.dateFrom}</if>
+    <if test="query.dateTo != null">AND s.created_at &lt; DATE_ADD(#{query.dateTo},INTERVAL 1 DAY)</if>
+  </sql>
+  <select id="page" resultType="com.crm.vo.SalesOrderVO"><include refid="select"/><include refid="where"/> ORDER BY s.id DESC LIMIT #{query.size} OFFSET #{query.offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) FROM crm_sales_order s JOIN crm_customer c ON c.id=s.customer_id JOIN crm_quotation q ON q.id=s.quotation_id LEFT JOIN sys_user o ON o.id=c.owner_id <include refid="where"/></select>
+  <select id="find" resultType="com.crm.vo.SalesOrderVO"><include refid="select"/> WHERE s.id=#{id} AND s.deleted=0</select>
+  <select id="lock" resultType="com.crm.vo.SalesOrderVO"><include refid="select"/> WHERE s.id=#{id} AND s.deleted=0 FOR UPDATE</select>
+  <select id="byQuotation" resultType="com.crm.entity.SalesOrder">SELECT * FROM crm_sales_order WHERE quotation_id=#{quotationId} AND deleted=0 FOR UPDATE</select>
+  <select id="activeByOpportunity" resultType="com.crm.entity.SalesOrder">SELECT * FROM crm_sales_order WHERE opportunity_id=#{opportunityId} AND status&lt;&gt;'CANCELLED' AND deleted=0 FOR UPDATE</select>
+  <select id="unfinished" resultType="long">SELECT id FROM crm_sales_order WHERE customer_id=#{customerId} AND deleted=0 AND status IN('DRAFT','CONFIRMED') FOR UPDATE</select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_sales_order(order_no,quotation_id,customer_id,opportunity_id,created_by,status,total_amount,snapshot_json,recipient_name,recipient_phone,shipping_address,tax_mode,payment_terms,delivery_terms,freight_terms,remark) VALUES(#{orderNo},#{quotationId},#{customerId},#{opportunityId},#{createdBy},#{status},#{totalAmount},#{snapshotJson},#{recipientName},#{recipientPhone},#{shippingAddress},#{taxMode},#{paymentTerms},#{deliveryTerms},#{freightTerms},#{remark})</insert>
+  <update id="updateDraft">
+    UPDATE crm_sales_order SET customer_order_no=#{customerOrderNo},recipient_name=#{recipientName},recipient_phone=#{recipientPhone},shipping_address=#{shippingAddress},
+    requested_date=#{requestedDate},promised_date=#{promisedDate},confirmation_note=#{confirmationNote},total_amount=#{totalAmount},tax_mode=#{taxMode},payment_terms=#{paymentTerms},
+    delivery_terms=#{deliveryTerms},freight_terms=#{freightTerms},remark=#{remark},version=version+1 WHERE id=#{id}
+  </update>
+  <update id="state">UPDATE crm_sales_order SET status=#{status},confirmed_at=#{confirmedAt},cancel_reason=#{cancelReason},version=version+1 WHERE id=#{id}</update>
+  <select id="items" resultType="com.crm.entity.SalesOrderItem">SELECT * FROM crm_sales_order_item WHERE order_id=#{orderId} AND active=1 ORDER BY sort_no</select>
+  <delete id="deleteItems">DELETE FROM crm_sales_order_item WHERE order_id=#{orderId}</delete>
+  <insert id="insertItem" useGeneratedKeys="true" keyProperty="id">
+    INSERT INTO crm_sales_order_item(order_id,sku_id,sort_no,product_name,model_code,sku_code,unit,specification,requirements,quantity,unit_price,line_amount)
+    VALUES(#{orderId},#{skuId},#{sortNo},#{productName},#{modelCode},#{skuCode},#{unit},#{specification},#{requirements},#{quantity},#{unitPrice},#{lineAmount})
+  </insert>
+  <select id="events" resultType="com.crm.vo.OrderEventVO">SELECT e.*,u.real_name AS actor_name FROM crm_sales_order_event e JOIN sys_user u ON u.id=e.actor_id WHERE e.order_id=#{orderId} ORDER BY e.id DESC</select>
+  <insert id="event">INSERT INTO crm_sales_order_event(order_id,actor_id,action,note,before_json,after_json) VALUES(#{orderId},#{actorId},#{action},#{note},#{beforeJson},#{afterJson})</insert>
+  <update id="retireItem">UPDATE crm_sales_order_item SET active=0 WHERE id=#{id}</update>
+  <select id="maxSort" resultType="int">SELECT COALESCE(MAX(sort_no),0) FROM crm_sales_order_item WHERE order_id=#{orderId}</select>
+  <update id="updateItem">UPDATE crm_sales_order_item SET sku_id=#{skuId},product_name=#{productName},model_code=#{modelCode},sku_code=#{skuCode},unit=#{unit},specification=#{specification},requirements=#{requirements},quantity=#{quantity},unit_price=#{unitPrice},line_amount=#{lineAmount} WHERE id=#{id}</update>
+  <select id="findIncludingDeleted" resultType="com.crm.vo.SalesOrderVO"><include refid="select"/> WHERE s.id=#{id}</select>
+  <select id="hasDownstream" resultType="boolean">SELECT EXISTS(SELECT 1 FROM crm_order_delivery WHERE order_id=#{id}) OR EXISTS(SELECT 1 FROM crm_shipment WHERE order_id=#{id})</select>
+  <update id="softDelete">UPDATE crm_sales_order SET deleted=1,deleted_at=NOW(),deleted_by=#{userId},version=version+1 WHERE id=#{id}</update>
+  <select id="hasPostedShipments" resultType="boolean">SELECT EXISTS(SELECT 1 FROM crm_shipment WHERE order_id=#{id} AND status='POSTED')</select>
+</mapper>

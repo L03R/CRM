@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.crm.mapper.QuotationMapper">
+  <sql id="select">SELECT q.*,(SELECT id FROM crm_sales_order s WHERE s.quotation_id=q.id AND s.deleted=0) AS order_id,(SELECT status FROM crm_sales_order s WHERE s.quotation_id=q.id AND s.deleted=0) AS order_status,(SELECT quotation_id FROM crm_sales_order s WHERE s.opportunity_id=q.opportunity_id AND s.status&lt;&gt;'CANCELLED' AND s.deleted=0) AS business_order_quote_id,(SELECT MAX(v.version_no) FROM crm_quotation v WHERE v.quote_no=q.quote_no AND v.deleted=0) AS latest_version_no,c.company_name AS current_customer_name,b.title AS opportunity_title,b.stage AS opportunity_stage,c.owner_id,o.dept_id AS owner_dept_id,o.real_name AS owner_name FROM crm_quotation q JOIN crm_customer c ON c.id=q.customer_id JOIN crm_opportunity b ON b.id=q.opportunity_id LEFT JOIN sys_user o ON o.id=c.owner_id</sql>
+  <sql id="access">
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scopes.quote"/></include>
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scopes.customer"/></include>
+    <include refid="com.crm.mapper.DashboardMapper.customerAccess"><property name="range" value="scopes.business"/></include>
+  </sql>
+  <sql id="where">WHERE q.deleted=0 AND c.owner_id IS NOT NULL <include refid="access"/>
+    <if test="customerId != null">AND q.customer_id=#{customerId}</if>
+    <if test="opportunityId != null">AND q.opportunity_id=#{opportunityId}</if>
+    <if test="keyword != null and keyword != ''">AND (q.quote_no LIKE CONCAT('%',#{keyword},'%') OR q.title LIKE CONCAT('%',#{keyword},'%') OR c.company_name LIKE CONCAT('%',#{keyword},'%') OR b.title LIKE CONCAT('%',#{keyword},'%'))</if>
+    <if test="status != null and status != ''"><choose><when test="status == 'EXPIRED'">AND q.status='SENT' AND q.valid_until &lt; CURRENT_DATE</when><when test="status == 'SENT'">AND q.status='SENT' AND q.valid_until &gt;= CURRENT_DATE</when><otherwise>AND q.status=#{status}</otherwise></choose></if>
+    <if test="onlyFinal">AND q.is_final=1</if>
+  </sql>
+  <select id="page" resultType="com.crm.vo.QuotationVO"><include refid="select"/><include refid="where"/> ORDER BY q.id DESC LIMIT #{size} OFFSET #{offset}</select>
+  <select id="count" resultType="long">SELECT COUNT(*) FROM crm_quotation q JOIN crm_customer c ON c.id=q.customer_id JOIN crm_opportunity b ON b.id=q.opportunity_id LEFT JOIN sys_user o ON o.id=c.owner_id <include refid="where"/></select>
+  <select id="find" resultType="com.crm.vo.QuotationVO"><include refid="select"/> WHERE q.id=#{id} AND q.deleted=0</select>
+  <select id="lock" resultType="com.crm.vo.QuotationVO"><include refid="select"/> WHERE q.id=#{id} AND q.deleted=0 FOR UPDATE</select>
+  <select id="latest" resultType="com.crm.entity.Quotation">SELECT * FROM crm_quotation WHERE quote_no=#{quoteNo} AND deleted=0 ORDER BY version_no DESC LIMIT 1 FOR UPDATE</select>
+  <select id="items" resultType="com.crm.entity.QuotationItem">SELECT * FROM crm_quotation_item WHERE quotation_id=#{quotationId} ORDER BY sort_no,id</select>
+  <select id="events" resultType="com.crm.entity.QuotationEvent">SELECT e.*,u.real_name AS actor_name FROM crm_quotation_event e JOIN sys_user u ON u.id=e.actor_id WHERE e.quotation_id=#{quotationId} ORDER BY e.id DESC</select>
+  <select id="versions" resultType="com.crm.entity.Quotation">SELECT q.* FROM crm_quotation q JOIN crm_customer c ON c.id=q.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id WHERE q.quote_no=#{quoteNo} AND q.deleted=0 AND c.owner_id IS NOT NULL <include refid="access"/> ORDER BY q.version_no</select>
+  <insert id="insert" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_quotation(quote_no,version_no,previous_id,customer_id,opportunity_id,contact_id,created_by,title,status,is_final,quote_date,valid_until,currency,tax_mode,payment_terms,delivery_terms,freight_terms,remark,customer_name,contact_name,contact_phone,contact_landline,contact_wechat,contact_email,seller_name,total_amount,sent_at,accepted_at) VALUES(#{quoteNo},#{versionNo},#{previousId},#{customerId},#{opportunityId},#{contactId},#{createdBy},#{title},#{status},#{isFinal},#{quoteDate},#{validUntil},#{currency},#{taxMode},#{paymentTerms},#{deliveryTerms},#{freightTerms},#{remark},#{customerName},#{contactName},#{contactPhone},#{contactLandline},#{contactWechat},#{contactEmail},#{sellerName},#{totalAmount},#{sentAt},#{acceptedAt})</insert>
+  <update id="updateDraft">UPDATE crm_quotation SET contact_id=#{contactId},title=#{title},quote_date=#{quoteDate},valid_until=#{validUntil},tax_mode=#{taxMode},payment_terms=#{paymentTerms},delivery_terms=#{deliveryTerms},freight_terms=#{freightTerms},remark=#{remark},customer_name=#{customerName},contact_name=#{contactName},contact_phone=#{contactPhone},contact_landline=#{contactLandline},contact_wechat=#{contactWechat},contact_email=#{contactEmail},total_amount=#{totalAmount} WHERE id=#{id}</update>
+  <update id="updateState">UPDATE crm_quotation SET status=#{status},is_final=#{isFinal},sent_at=#{sentAt},accepted_at=#{acceptedAt} WHERE id=#{id}</update>
+  <update id="clearFinal">UPDATE crm_quotation SET is_final=0 WHERE opportunity_id=#{opportunityId} AND deleted=0 AND is_final=1</update>
+  <select id="finalId" resultType="long">SELECT id FROM crm_quotation WHERE opportunity_id=#{opportunityId} AND deleted=0 AND is_final=1 FOR UPDATE</select>
+  <delete id="deleteItems">DELETE FROM crm_quotation_item WHERE quotation_id=#{quotationId}</delete>
+  <insert id="insertItem" useGeneratedKeys="true" keyProperty="id">INSERT INTO crm_quotation_item(quotation_id,sku_id,sort_no,product_name,model_code,sku_code,unit,specification,requirements,quantity,unit_price,line_amount) VALUES(#{quotationId},#{skuId},#{sortNo},#{productName},#{modelCode},#{skuCode},#{unit},#{specification},#{requirements},#{quantity},#{unitPrice},#{lineAmount})</insert>
+  <insert id="event">INSERT INTO crm_quotation_event(quotation_id,actor_id,action,note) VALUES(#{id},#{userId},#{action},#{note})</insert>
+  <select id="skuIds" resultType="long">SELECT s.id FROM crm_product_sku s JOIN crm_product p ON p.id=s.product_id WHERE s.status=1 AND p.status=1
+    <if test="keyword != null and keyword != ''">AND (s.sku_code LIKE CONCAT('%',#{keyword},'%') OR p.product_name LIKE CONCAT('%',#{keyword},'%') OR p.model_code LIKE CONCAT('%',#{keyword},'%'))</if> ORDER BY s.id LIMIT 100
+  </select>
+  <select id="opportunities" resultType="com.crm.vo.OpportunityVO">SELECT b.*,c.company_name AS customer_name,c.owner_id,o.dept_id AS owner_dept_id,o.real_name AS owner_name FROM crm_opportunity b JOIN crm_customer c ON c.id=b.customer_id LEFT JOIN sys_user o ON o.id=c.owner_id WHERE c.owner_id IS NOT NULL AND b.stage NOT IN('WON','LOST') <include refid="access"/>
+    <if test="customerId != null">AND b.customer_id=#{customerId}</if>
+    <if test="keyword != null and keyword != ''">AND (b.title LIKE CONCAT('%',#{keyword},'%') OR c.company_name LIKE CONCAT('%',#{keyword},'%'))</if> ORDER BY b.id DESC LIMIT 50
+  </select>
+  <select id="activeCustomerQuotes" resultType="long">SELECT id FROM crm_quotation WHERE deleted=0 AND customer_id=#{customerId} AND (status='ACCEPTED' OR (status='SENT' AND valid_until &gt;= CURRENT_DATE)) AND NOT EXISTS(SELECT 1 FROM crm_sales_order s WHERE s.quotation_id=crm_quotation.id AND s.status='COMPLETED' AND s.deleted=0) FOR UPDATE</select>
+  <select id="maxVersion" resultType="int">SELECT version_no FROM crm_quotation WHERE quote_no=#{quoteNo} ORDER BY version_no DESC LIMIT 1 FOR UPDATE</select>
+  <select id="hasReferences" resultType="boolean">SELECT EXISTS(SELECT 1 FROM crm_sales_order WHERE quotation_id=#{id}) OR EXISTS(SELECT 1 FROM crm_quotation WHERE previous_id=#{id})</select>
+  <update id="softDelete">UPDATE crm_quotation SET deleted=1,deleted_at=NOW(),deleted_by=#{userId} WHERE id=#{id}</update>
+  <select id="hasActiveOrders" resultType="boolean">SELECT EXISTS(SELECT 1 FROM crm_sales_order WHERE quotation_id=#{id} AND deleted=0 AND status&lt;&gt;'CANCELLED')</select>
+</mapper>
