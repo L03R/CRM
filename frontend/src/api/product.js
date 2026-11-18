@@ -1,0 +1,16 @@
+import request from './request'
+
+export const listCategories = () => request.get('/products/categories')
+export const getCategoryAttributes = (id) => request.get(`/products/categories/${id}/attributes`)
+export const listAttributeDefinitions = (categoryId) => request.get(`/products/categories/${categoryId}/attribute-definitions`)
+export const saveAttributeDefinition = (categoryId,data) => data.id ? request.put(`/products/categories/${categoryId}/attribute-definitions/${data.id}`,data) : request.post(`/products/categories/${categoryId}/attribute-definitions`,data)
+export const removeAttributeDefinition = (categoryId,id) => request.delete(`/products/categories/${categoryId}/attribute-definitions/${id}`)
+export const saveCategory = (data) => data.id ? request.put(`/products/categories/${data.id}`,data) : request.post('/products/categories',data)
+export const removeCategory = (id) => request.delete(`/products/categories/${id}`)
+export const listProducts = (params={}) => request.get('/products',{params})
+export const pageProducts = (params={}) => request.get('/products/page',{params})
+export const getProduct = (id) => request.get(`/products/${id}`)
+export const saveProduct = (data) => data.id ? request.put(`/products/${data.id}`,data) : request.post('/products',data)
+export const changeProductStatus = (id,status) => request.put(`/products/${id}/status`,{status})
+export const saveSku = (productId,data) => data.id ? request.put(`/products/${productId}/skus/${data.id}`,data) : request.post(`/products/${productId}/skus`,data)
+export const changeSkuStatus = (productId,id,status) => request.put(`/products/${productId}/skus/${id}/status`,{status})

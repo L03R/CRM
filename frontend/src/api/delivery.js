@@ -1,0 +1,12 @@
+import request from './request'
+export const pageDeliveries=params=>request.get('/deliveries',{params})
+export const getDelivery=id=>request.get('/deliveries/'+id)
+export const deliveryPeople=id=>request.get('/deliveries/'+id+'/people')
+export const assignDelivery=(id,data)=>request.put('/deliveries/'+id+'/assignment',data)
+export const updateDelivery=(id,data)=>request.put('/deliveries/'+id+'/progress',data)
+export const acknowledgeDelivery=(id,data)=>request.post('/deliveries/'+id+'/acknowledgement',data)
+export const completeDelivery=(id,data)=>request.post('/deliveries/'+id+'/complete',data)
+export const pageShipments=params=>request.get('/shipments',{params})
+export const getShipment=id=>request.get('/shipments/'+id)
+export const createShipment=data=>request.post('/shipments',data)
+export const voidShipment=(id,reason)=>request.post('/shipments/'+id+'/void',{reason})

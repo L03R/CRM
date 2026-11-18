@@ -1,0 +1,164 @@
+:root {
+  --crm-brand: #2f6bff;
+  --crm-brand-dark: #1f4fd8;
+  --crm-brand-light: #eef4ff;
+  --crm-bg: #f4f6fa;
+  --crm-border: #e8ecf3;
+  --crm-text: #1f2733;
+  --crm-text-sub: #6b7787;
+  --crm-radius: 10px;
+  --el-color-primary: #2f6bff;
+  --el-color-primary-light-3: #6a94ff;
+  --el-color-primary-light-5: #97b4ff;
+  --el-color-primary-light-7: #c4d4ff;
+  --el-color-primary-light-8: #dbe5ff;
+  --el-color-primary-light-9: #eef4ff;
+  --el-color-primary-dark-2: #1f4fd8;
+  --el-border-radius-base: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+  color: var(--crm-text);
+  background: var(--crm-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--crm-brand);
+  text-decoration: none;
+}
+
+/* 通用页面结构 */
+.page {
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.page-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--crm-text-sub);
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius);
+  box-shadow: 0 1px 2px rgba(23, 43, 77, 0.04);
+}
+
+.card + .card {
+  margin-top: 16px;
+}
+
+.card-body {
+  padding: 18px 20px;
+}
+
+/* 固定操作位置，某一按钮无权限或不适用时，其他按钮不向前挤。 */
+.workflow-actions {
+  display: grid;
+  grid-template-columns: 32px 64px 64px;
+  column-gap: 12px;
+  align-items: center;
+  min-height: 24px;
+}
+
+.workflow-actions > .el-button,
+.workflow-actions > .el-dropdown {
+  margin: 0;
+  justify-self: start;
+}
+
+.workflow-actions .action-follow { grid-column: 2; }
+.workflow-actions .action-more { grid-column: 3; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--crm-border);
+}
+
+.toolbar-right {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 20px;
+}
+
+.text-sub {
+  color: var(--crm-text-sub);
+}
+
+.text-muted {
+  color: #98a2b3;
+}
+
+.mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+}
+
+.amount {
+  font-weight: 600;
+  color: #1f2733;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d3dae6;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bcc6d6;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.el-table th.el-table__cell {
+  background: #fafbfd !important;
+  color: #5a6572;
+  font-weight: 500;
+}
